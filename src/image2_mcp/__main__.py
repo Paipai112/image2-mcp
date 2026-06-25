@@ -101,7 +101,7 @@ async def health_check() -> int:
     api_key = os.environ.get("MAGENE_API_KEY", "").strip()
     base_url = os.environ.get(
         "MAGENE_API_BASE_URL",
-        "http://tops.magene.cn:11636/api/v1/images/generations",
+        "http://localhost:11636/api/v1/images/generations",
     ).rstrip("/")
 
     if api_key:

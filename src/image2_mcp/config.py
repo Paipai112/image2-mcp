@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .errors import AuthError
 
-_DEFAULT_BASE_URL = "http://tops.magene.cn:11636/api/v1/images/generations"
+_DEFAULT_BASE_URL = "http://localhost:11636/api/v1/images/generations"
 _DEFAULT_MODEL = "openai/gpt-image-2"
 
 

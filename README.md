@@ -49,7 +49,7 @@ cp .env.example ~/.claude/.env
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `MAGENE_API_KEY` | **Yes** | — | Your company API key |
-| `MAGENE_API_BASE_URL` | No | `http://tops.magene.cn:11636/api/v1/images/generations` | API endpoint |
+| `MAGENE_API_BASE_URL` | No | `http://localhost:11636/api/v1/images/generations` (set via env) | API endpoint |
 | `IMAGE2_OUTPUT_DIR` | No | System temp dir `/image2-output` | Default image save location |
 | `IMAGE2_MODEL` | No | `openai/gpt-image-2` | Model name override |
 

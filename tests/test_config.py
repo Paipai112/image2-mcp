@@ -36,7 +36,7 @@ def test_get_api_key_missing_raises_auth_error():
 
 
 def test_get_base_url_default():
-    assert get_base_url() == "http://tops.magene.cn:11636/api/v1/images/generations"
+    assert get_base_url() == "http://localhost:11636/api/v1/images/generations"
 
 
 def test_get_base_url_custom():
