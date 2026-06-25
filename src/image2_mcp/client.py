@@ -13,18 +13,68 @@ from .errors import APIError, AuthError, NetworkError
 logger = logging.getLogger(__name__)
 
 _MAX_RETRIES = 1  # 1 retry = 2 attempts total
-_REQUEST_TIMEOUT = 60.0  # seconds
+
+# Timeout per-diemension tier: bigger images need more time.
+# Worst case: 3840×2160 ("4K") at high quality ≈ 3–5 min.
+_REQUEST_TIMEOUT_BY_PIXELS: dict[tuple[int, int], float] = {
+    # (lower_bound, upper_bound): timeout_seconds
+    (0, 1_048_576): 90.0,   # up to 1024x1024
+    (1_048_577, 2_359_296): 180.0,  # up to 1536x1024 / 1024x1536
+    (2_359_297, 4_194_304): 240.0,  # up to 2048x2048
+    (4_194_305, 8_294_400): 360.0,  # up to 3840x2160 / 2160x3840
+}
+# Total fallback for anything that doesn't match
+_REQUEST_TIMEOUT_FALLBACK = 420.0
+
+
+def _timeout_for_size(size: str) -> float:
+    """Return the appropriate HTTP timeout for the given image size.
+
+    Larger images take more time to generate. Uses pixel-count tiers
+    to ensure even 4K images at high quality won't hit a timeout.
+
+    Timeouts:
+        up to 1024x1024       → 90s
+        up to 1536x1024       → 180s
+        up to 2048x2048       → 240s
+        4K (3840x2160)        → 360s
+        auto / unknown        → 420s (generous fallback)
+    """
+    if size == "auto":
+        return _REQUEST_TIMEOUT_FALLBACK
+
+    import re
+
+    m = re.match(r"^(\d+)x(\d+)$", size)
+    if not m:
+        return _REQUEST_TIMEOUT_FALLBACK
+
+    pixels = int(m.group(1)) * int(m.group(2))
+    for (lo, hi), t in _REQUEST_TIMEOUT_BY_PIXELS.items():
+        if lo <= pixels <= hi:
+            return t
+
+    return _REQUEST_TIMEOUT_FALLBACK
 
 
 class Image2Client:
     """Async HTTP client for the image2 generations API."""
 
-    def __init__(self, base_url: str, api_key: str) -> None:
+    def __init__(self, base_url: str, api_key: str, model: str) -> None:
         self._base_url = base_url
-        self._auth_headers = {
+        self._model = model
+        self._headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
+
+    def _client_for(self, size: str) -> httpx.AsyncClient:
+        """Create a client with a timeout tuned for the target size."""
+        t = _timeout_for_size(size)
+        return httpx.AsyncClient(
+            headers=self._headers,
+            timeout=httpx.Timeout(t),
+        )
 
     async def generate(
         self, prompt: str, size: str, quality: str
@@ -34,9 +84,10 @@ class Image2Client:
         Raises:
             AuthError: on 401/403
             APIError: on other 4xx (no retry) or 5xx (after retry)
+            NetworkError: on network connectivity failures (after retry)
         """
         payload = {
-            "model": "openai/gpt-image-2",
+            "model": self._model,
             "prompt": prompt,
             "size": size,
             "quality": quality,
@@ -46,10 +97,17 @@ class Image2Client:
 
         for attempt in range(_MAX_RETRIES + 1):
             try:
-                return await self._do_request(payload)
-            except (APIError, AuthError):
-                raise  # don't retry API/auth errors
-            except Exception as exc:
+                return await self._do_request(payload, size)
+            except (AuthError, APIError):
+                raise  # don't retry auth/client errors
+            except (
+                httpx.ConnectError,
+                httpx.TimeoutException,
+                httpx.RemoteProtocolError,
+                httpx.ReadError,
+                httpx.WriteError,
+                httpx.PoolTimeout,
+            ) as exc:
                 last_error = exc
                 if attempt < _MAX_RETRIES:
                     logger.warning(
@@ -61,14 +119,10 @@ class Image2Client:
             f"Request failed after {_MAX_RETRIES + 1} attempts: {last_error}"
         )
 
-    async def _do_request(self, payload: dict[str, Any]) -> tuple[bytes, dict[str, Any]]:
-        """Single HTTP request attempt. Returns (bytes, usage)."""
-        async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-            response = await client.post(
-                self._base_url,
-                headers=self._auth_headers,
-                json=payload,
-            )
+    async def _do_request(self, payload: dict[str, Any], size: str) -> tuple[bytes, dict[str, Any]]:
+        """Single HTTP request attempt. Returns (image_bytes, usage)."""
+        async with self._client_for(size) as client:
+            response = await client.post(self._base_url, json=payload)
             return self._handle_response(response)
 
     def _handle_response(self, response: httpx.Response) -> tuple[bytes, dict[str, Any]]:

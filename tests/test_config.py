@@ -3,7 +3,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from image2_mcp.config import get_api_key, get_base_url, get_output_dir
+from image2_mcp.config import get_api_key, get_base_url, get_model, get_output_dir
 from image2_mcp.errors import AuthError
 
 
@@ -12,13 +12,13 @@ ORIGINAL_ENV = dict(os.environ)
 
 def setup_function():
     """Clear env vars that affect config before each test."""
-    for key in ("MAGENE_API_KEY", "MAGENE_API_BASE_URL", "IMAGE2_OUTPUT_DIR"):
+    for key in ("MAGENE_API_KEY", "MAGENE_API_BASE_URL", "IMAGE2_OUTPUT_DIR", "IMAGE2_MODEL"):
         os.environ.pop(key, None)
 
 
 def teardown_module():
     """Restore config env vars to their original values."""
-    for key in ("MAGENE_API_KEY", "MAGENE_API_BASE_URL", "IMAGE2_OUTPUT_DIR"):
+    for key in ("MAGENE_API_KEY", "MAGENE_API_BASE_URL", "IMAGE2_OUTPUT_DIR", "IMAGE2_MODEL"):
         if key in ORIGINAL_ENV:
             os.environ[key] = ORIGINAL_ENV[key]
         else:
@@ -66,3 +66,12 @@ def test_get_output_dir_returns_same_path_on_second_call():
     first = get_output_dir()
     second = get_output_dir()
     assert first == second
+
+
+def test_get_model_default():
+    assert get_model() == "openai/gpt-image-2"
+
+
+def test_get_model_custom():
+    os.environ["IMAGE2_MODEL"] = "custom/model-name"
+    assert get_model() == "custom/model-name"

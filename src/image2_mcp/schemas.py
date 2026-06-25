@@ -55,7 +55,7 @@ def _validate_custom_size(width: int, height: int) -> str | None:
 class GenerateImageInput(BaseModel):
     """Input parameters for the generate_image tool."""
 
-    prompt: str = Field(min_length=1, description="Text prompt for image generation (max ~32000 chars)")
+    prompt: str = Field(min_length=1, max_length=32000, description="Text prompt for image generation")
     size: str = Field(description="Output size, e.g. '1024x1024' or 'auto'")
     quality: str = Field(default="auto", description="Quality: low, medium, high, or auto")
     output_dir: str | None = Field(default=None, description="Custom output directory path")

@@ -13,6 +13,13 @@ async def test_create_server_success():
     assert server.name == "Image2"
 
 
+@pytest.mark.asyncio
+async def test_create_server_success():
+    server = create_server()
+    assert server is not None
+    assert server.name == "Image2"
+
+
 def test_generate_filename_custom():
     name = _generate_filename("my-drawing")
     assert name == "my-drawing.png"
@@ -70,14 +77,49 @@ async def test_generate_image_bad_size_returns_error():
 
 @pytest.mark.asyncio
 async def test_generate_image_preset_size_passes_validation():
-    """Preset size 'auto' passes validation, fails at network layer."""
+    """Preset size 'auto' passes validation and async mode returns immediately."""
+    server = create_server()
+    result, meta = await server.call_tool("generate_image", {
+        "prompt": "a cat",
+        "size": "auto",
+        "quality": "low",
+    })
+    # Async mode — should return text confirmation without error
+    text = result[0].text
+    assert "started" in text.lower()
+
+
+@pytest.mark.asyncio
+async def test_generate_image_sync_mode_fails_on_network():
+    """Sync mode with unreachable API raises network error."""
     server = create_server()
     with pytest.raises(ToolError) as exc_info:
         await server.call_tool("generate_image", {
             "prompt": "a cat",
             "size": "auto",
             "quality": "low",
+            "async_mode": False,
         })
-    # Should fail at network, not validation
     msg = str(exc_info.value).lower()
-    assert any(kw in msg for kw in ("network", "connection", "nodename", "resolve", "refused"))
+    assert any(kw in msg for kw in ("network", "connection", "nodename", "resolve", "refused", "api error"))
+
+
+@pytest.mark.asyncio
+async def test_list_images_returns_files():
+    """list_images should return the generated images."""
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create a couple of dummy PNG files
+        (Path(tmpdir) / "test_a.png").write_bytes(b"\x89PNG\x00\x00")
+        (Path(tmpdir) / "test_b.png").write_bytes(b"\x89PNG\x00\x00")
+
+        server = create_server()
+        result, meta = await server.call_tool("list_images", {
+            "output_dir": tmpdir,
+            "limit": 5,
+        })
+        text = result[0].text
+        assert "test_a.png" in text
+        assert "test_b.png" in text

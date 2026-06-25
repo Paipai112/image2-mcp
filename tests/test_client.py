@@ -2,6 +2,7 @@
 
 import base64
 
+import httpx
 import pytest
 import respx
 from httpx import Response
@@ -24,7 +25,7 @@ API_KEY = "sk-test-key"
 @pytest.fixture
 def client():
     """Create a client with test base URL."""
-    return Image2Client(base_url=BASE_URL, api_key=API_KEY)
+    return Image2Client(base_url=BASE_URL, api_key=API_KEY, model="openai/gpt-image-2")
 
 
 @pytest.mark.asyncio
@@ -73,9 +74,9 @@ async def test_generate_500_raises_api_error_retryable(client, respx_mock):
 @pytest.mark.asyncio
 async def test_generate_network_error_is_retried(client, respx_mock):
     route = respx_mock.post(BASE_URL)
-    # First call times out, second succeeds
+    # First call throws a connection error, second succeeds
     route.side_effect = [
-        Exception("Connection refused"),
+        httpx.ConnectError("Connection refused"),
         Response(200, json={
             "data": [{"b64_json": DUMMY_PNG}],
             "usage": {"total_tokens": 1},
@@ -90,7 +91,7 @@ async def test_generate_network_error_is_retried(client, respx_mock):
 async def test_generate_both_attempts_fail(client, respx_mock):
     route = respx_mock.post(BASE_URL)
     route.side_effect = [
-        Exception("timeout"),
+        httpx.TimeoutException("timeout"),
         Response(500, text="Still down"),
     ]
     with pytest.raises(APIError) as exc:

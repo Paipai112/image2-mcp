@@ -7,6 +7,7 @@ from pathlib import Path
 from .errors import AuthError
 
 _DEFAULT_BASE_URL = "http://tops.magene.cn:11636/api/v1/images/generations"
+_DEFAULT_MODEL = "openai/gpt-image-2"
 
 
 def get_api_key() -> str:
@@ -20,6 +21,11 @@ def get_api_key() -> str:
 def get_base_url() -> str:
     """Read MAGENE_API_BASE_URL or return default."""
     return os.environ.get("MAGENE_API_BASE_URL", _DEFAULT_BASE_URL).rstrip("/")
+
+
+def get_model() -> str:
+    """Read IMAGE2_MODEL or return default."""
+    return os.environ.get("IMAGE2_MODEL", _DEFAULT_MODEL).strip()
 
 
 def get_output_dir(path: str | None = None) -> Path:
