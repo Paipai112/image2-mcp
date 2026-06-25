@@ -23,18 +23,42 @@ echo -e "${BOLD}  Image2 MCP — One-Click Setup${RESET}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
 
-# ── 1. Check uv ────────────────────────────
-echo -e "${BOLD}[1/5]${RESET} Checking uv is installed..."
-if command -v uv &>/dev/null; then
-    echo -e "  ${GREEN}✓${RESET} uv $(uv --version)"
-else
-    echo -e "  ${RED}✗${RESET} uv is not installed."
-    echo ""
-    echo "  Install uv first:"
-    echo "    curl -LsSf https://astral.sh/uv/install.sh | sh"
-    echo ""
-    exit 1
-fi
+	# ── 1. Install / check uv ─────────────────
+	echo -e "${BOLD}[1/5]${RESET} Ensuring uv is installed..."
+
+	if command -v uv &>/dev/null; then
+	    echo -e "  ${GREEN}✓${RESET} uv $(uv --version)"
+	else
+	    echo -e "  ${YELLOW}!${RESET} uv not found — installing now..."
+	    case "$(uname -s)" in
+	        Darwin)
+	            echo -e "  Installing uv on macOS..."
+	            curl -LsSf https://astral.sh/uv/install.sh | sh
+	            ;;
+	        MINGW*|MSYS*|CYGWIN*)
+	            echo -e "  Installing uv on Windows..."
+	            powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+	            ;;
+	        Linux)
+	            echo -e "  Installing uv on Linux..."
+	            curl -LsSf https://astral.sh/uv/install.sh | sh
+	            ;;
+	        *)
+	            echo -e "  ${RED}✗${RESET} Unknown OS — please install uv manually:"
+	            echo "    https://docs.astral.sh/uv/getting-started/installation/"
+	            echo ""
+	            exit 1
+	            ;;
+	    esac
+
+	    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+	    if command -v uv &>/dev/null; then
+	        echo -e "  ${GREEN}✓${RESET} uv installed successfully ($(uv --version))"
+	    else
+	        echo -e "  ${RED}✗${RESET} uv installation may have failed — restart your shell and re-run."
+	        exit 1
+	    fi
+	fi
 
 # ── 2. Install dependencies ────────────────
 echo -e "${BOLD}[2/5]${RESET} Installing Python dependencies..."
