@@ -3,7 +3,14 @@
 MCP Server for the company image2 text-to-image API. Allows Claude Code, Codex,
 and other MCP-compatible AI tools to generate images directly.
 
-## 🚀 Quick Start (One Command)
+## 🚀 Quick Start (Double-Click)
+
+| 系统 | 操作 |
+|------|------|
+| **macOS** | 双击 `setup.command` |
+| **Windows** | 双击 `setup.bat`（需要 Git Bash 或 WSL） |
+
+或者手动：
 
 ```bash
 git clone <repo-url>
