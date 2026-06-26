@@ -114,12 +114,12 @@ def create_server() -> FastMCP:
         "Image2",
         instructions=(
             "## Image Generation Behavior\n"
-            "1. When generating images, the output directory defaults to the **current project's `output/` folder**. "
-            "   You do NOT need to specify `output_dir` — it will auto-save there.\n"
-            "2. If the user wants images elsewhere, pass `output_dir` explicitly.\n"
+            "1. Do NOT pass `output_dir` in most cases — images will auto-save to the correct project's "
+            "`output/` folder via the server's fallback chain (IMAGE2_PROJECT_DIR is auto-set at launch).\n"
+            "2. Only pass `output_dir` when the user explicitly wants images saved to a specific location.\n"
             "3. Always use `async_mode=true` (the default) so image generation does NOT block the conversation.\n"
             "4. After async generation, proactively tell the user their image is being generated and saved.\n"
-            "5. Use `list_images` to check what's been generated — the user can then open the files.\n"
+            "5. Use `list_images` to check what's been generated (use the same `output_dir` if one was specified).\n"
             "6. When the user asks for multiple images, fire them all in parallel using async mode.\n"
             "7. Always try to enrich and optimize the user's prompt for the best image results."
         ),
