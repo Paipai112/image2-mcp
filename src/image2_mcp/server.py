@@ -47,8 +47,8 @@ def _format_size_help() -> str:
     )
 
 
-def _handle_background_result(task: asyncio.Task) -> None:
-    """Callback for background tasks — logs result or error."""
+def _log_done(task: asyncio.Task) -> None:
+    """Fallback callback when MCP session is not available (e.g. tests)."""
     try:
         if task.cancelled():
             logger.warning("Background image task was cancelled")
@@ -63,6 +63,53 @@ def _handle_background_result(task: asyncio.Task) -> None:
         logger.warning("Background image task was cancelled")
     except Exception:
         logger.warning("Background task result retrieval failed", exc_info=True)
+
+
+async def _background_generate_and_notify(
+    task: asyncio.Task,
+    session: Any,
+    request_id: str | None,
+    validated: GenerateImageInput,
+    mcp: FastMCP,
+) -> None:
+    """Await a background generation task, then push a log notification to the MCP client.
+
+    This is the event-driven alternative to polling list_images:
+    when the image finishes (or fails), the client gets a notification immediately.
+    """
+    try:
+        image_bytes, file_path, usage = await task
+        await session.send_log_message(
+            level="notice",
+            data={
+                "event": "image_ready",
+                "path": str(file_path),
+                "filename": file_path.name,
+                "prompt": validated.prompt[:100],
+                "size": validated.size,
+                "usage": usage,
+            },
+            logger="image2",
+            related_request_id=request_id,
+        )
+        logger.info("Background image completed, notification sent: %s", file_path)
+    except asyncio.CancelledError:
+        logger.warning("Background image task was cancelled")
+    except Exception as exc:
+        logger.warning("Background image generation failed: %s", exc)
+        try:
+            await session.send_log_message(
+                level="error",
+                data={
+                    "event": "image_failed",
+                    "error": str(exc),
+                    "prompt": validated.prompt[:100],
+                },
+                logger="image2",
+                related_request_id=request_id,
+            )
+        except Exception:
+            logger.warning("Failed to send error notification", exc_info=True)
 
 
 async def _generate_and_save(
@@ -114,14 +161,14 @@ def create_server() -> FastMCP:
         "Image2",
         instructions=(
             "## Image Generation Behavior\n"
-            "1. Do NOT pass `output_dir` in most cases — images will auto-save to the correct project's "
-            "`output/` folder via the server's fallback chain (IMAGE2_PROJECT_DIR is auto-set at launch).\n"
-            "2. Only pass `output_dir` when the user explicitly wants images saved to a specific location.\n"
-            "3. Always use `async_mode=true` (the default) so image generation does NOT block the conversation.\n"
-            "4. After async generation, proactively tell the user their image is being generated and saved.\n"
-            "5. Use `list_images` to check what's been generated (use the same `output_dir` if one was specified).\n"
-            "6. When the user asks for multiple images, fire them all in parallel using async mode.\n"
-            "7. Always try to enrich and optimize the user's prompt for the best image results."
+            "1. Do NOT pass `output_dir` — images save to the project's `output/` folder automatically.\n"
+            "2. Always use `async_mode=true` (the default) — generation will NOT block the conversation.\n"
+            "3. After calling generate_image, do NOT poll list_images. "
+            "You will receive a log notification when the image is ready (or failed). "
+            "Just tell the user \"generating...\" and move on.\n"
+            "4. When you receive the notification that an image is ready, tell the user.\n"
+            "5. For multiple images, fire all generate_image calls in parallel — each sends its own notification.\n"
+            "6. Always try to enrich and optimize the user's prompt for the best image results."
         ),
     )
 
@@ -181,16 +228,35 @@ def create_server() -> FastMCP:
                 pass
 
         if async_mode:
-            # Fire-and-forget: schedule the coroutine and let it run independently.
-            # Use ensure_future (not create_task) and yield to the event loop
-            # so the task gets a chance to start before we return.
-            task = asyncio.ensure_future(_generate_and_save(client, validated, ctx))
-            task.add_done_callback(_handle_background_result)
+            # Fire-and-forget: create the generation task, then schedule
+            # a notifier that pushes a log message to the client when done.
+            gen_task = asyncio.ensure_future(
+                _generate_and_save(client, validated, ctx)
+            )
+
             # Keep a reference to prevent GC
             if not hasattr(mcp, "_bg_tasks"):
                 mcp._bg_tasks = set()
-            mcp._bg_tasks.add(task)
-            task.add_done_callback(mcp._bg_tasks.discard)
+            mcp._bg_tasks.add(gen_task)
+            gen_task.add_done_callback(mcp._bg_tasks.discard)
+
+            # Schedule the event-driven notification
+            try:
+                session = ctx.session
+                notify_coro = _background_generate_and_notify(
+                    gen_task,
+                    session,
+                    ctx.request_id,
+                    validated,
+                    mcp,
+                )
+                notifier = asyncio.ensure_future(notify_coro)
+                mcp._bg_tasks.add(notifier)
+                notifier.add_done_callback(mcp._bg_tasks.discard)
+            except (ValueError, RuntimeError):
+                # ctx.session not available (e.g. in tests) — fallback to plain log
+                _log_done(gen_task)
+
             # Yield so the coroutine starts executing
             await asyncio.sleep(0)
             return [
@@ -200,9 +266,7 @@ def create_server() -> FastMCP:
                         "🔥 Image generation started in background!\n"
                         f"Prompt: {validated.prompt[:80]}...\n"
                         f"Size: {validated.size} | Quality: {validated.quality}\n"
-                        "The image will be saved to the output directory shortly. "
-                        "You can continue chatting while it generates.\n"
-                        "Run `list_images` to check what's been generated."
+                        "You'll be notified when it's ready — no need to poll."
                     ),
                 }
             ]
