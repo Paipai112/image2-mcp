@@ -57,8 +57,9 @@ cp .env.example ~/.claude/.env
 |----------|----------|---------|-------------|
 | `MAGENE_API_KEY` | **Yes** | — | Your company API key |
 | `MAGENE_API_BASE_URL` | No | `http://localhost:11636/api/v1/images/generations` (set via env) | API endpoint |
-| `IMAGE2_OUTPUT_DIR` | No | System temp dir `/image2-output` | Default image save location |
+| `IMAGE2_OUTPUT_DIR` | No | Current project `/output` | Default image save location |
 | `IMAGE2_MODEL` | No | `openai/gpt-image-2` | Model name override |
+| `IMAGE2_PROJECT_DIR` | No | Auto-set by launcher | Project root (images → `$PROJECT/output/`) |
 
 ### MCP Configuration
 
@@ -71,7 +72,7 @@ Add to `~/.claude/.mcp.json`:
       "command": "bash",
       "args": [
         "-c",
-        "set -a; [ -f ~/.claude/.env ] && . ~/.claude/.env; [ -f .env ] && . ./.env; set +a; uv run --directory /path/to/image2-mcp python -m image2_mcp"
+        "set -a; [ -f ~/.claude/.env ] && . ~/.claude/.env; [ -f .env ] && . ./.env; export IMAGE2_PROJECT_DIR=$(pwd); set +a; uv run --directory /path/to/image2-mcp python -m image2_mcp"
       ],
       "description": "文生图 — 调用公司统一 API 平台 image2 模型生成图片"
     }

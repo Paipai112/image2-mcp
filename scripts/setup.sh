@@ -130,7 +130,7 @@ echo -e "${BOLD}[5/5]${RESET} Configuring Claude Code MCP server..."
 MCP_ENTRY=$(cat <<EOF
 {
       "command": "bash",
-      "args": ["-c", "set -a; [ -f ~/.claude/.env ] && . ~/.claude/.env; [ -f .env ] && . ./.env; set +a; uv run --directory ${PROJECT_DIR} python -m image2_mcp"],
+      "args": ["-c", "set -a; [ -f ~/.claude/.env ] && . ~/.claude/.env; [ -f .env ] && . ./.env; export IMAGE2_PROJECT_DIR=\$(pwd); set +a; uv run --directory ${PROJECT_DIR} python -m image2_mcp"],
       "description": "文生图 — 调用公司统一 API 平台 image2 模型生成图片"
     }
 EOF

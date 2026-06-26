@@ -32,9 +32,10 @@ def get_output_dir(path: str | None = None) -> Path:
     """Get the output directory for generated images.
 
     Precedence:
-    1. Explicit path argument (from user request)
+    1. Explicit path argument (from user/AI request)
     2. IMAGE2_OUTPUT_DIR env var
-    3. System temp dir / image2-output
+    3. IMAGE2_PROJECT_DIR env var → <project>/output/ (auto-set by MCP launcher)
+    4. System temp dir / image2-output
     """
     if path:
         output_dir = Path(path)
@@ -43,7 +44,11 @@ def get_output_dir(path: str | None = None) -> Path:
         if env_path:
             output_dir = Path(env_path)
         else:
-            output_dir = Path(tempfile.gettempdir()) / "image2-output"
+            project_dir = os.environ.get("IMAGE2_PROJECT_DIR")
+            if project_dir:
+                output_dir = Path(project_dir) / "output"
+            else:
+                output_dir = Path(tempfile.gettempdir()) / "image2-output"
 
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
