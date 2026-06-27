@@ -12,13 +12,13 @@ ORIGINAL_ENV = dict(os.environ)
 
 def setup_function():
     """Clear env vars that affect config before each test."""
-    for key in ("MAGENE_API_KEY", "MAGENE_API_BASE_URL", "IMAGE2_OUTPUT_DIR", "IMAGE2_MODEL", "IMAGE2_PROJECT_DIR"):
+    for key in ("MAGENE_API_KEY", "MAGENE_API_BASE_URL", "IMAGE2_OUTPUT_DIR", "IMAGE2_MODEL", "IMAGE2_PROJECT_DIR", "CLAUDE_PROJECT_DIR"):
         os.environ.pop(key, None)
 
 
 def teardown_module():
     """Restore config env vars to their original values."""
-    for key in ("MAGENE_API_KEY", "MAGENE_API_BASE_URL", "IMAGE2_OUTPUT_DIR", "IMAGE2_MODEL", "IMAGE2_PROJECT_DIR"):
+    for key in ("MAGENE_API_KEY", "MAGENE_API_BASE_URL", "IMAGE2_OUTPUT_DIR", "IMAGE2_MODEL", "IMAGE2_PROJECT_DIR", "CLAUDE_PROJECT_DIR"):
         if key in ORIGINAL_ENV:
             os.environ[key] = ORIGINAL_ENV[key]
         else:
@@ -36,7 +36,7 @@ def test_get_api_key_missing_raises_auth_error():
 
 
 def test_get_base_url_default():
-    assert get_base_url() == "http://localhost:11636/api/v1/images/generations"
+    assert get_base_url() == "http://tops.magene.cn:11636/api/v1/images/generations"
 
 
 def test_get_base_url_custom():
@@ -48,8 +48,8 @@ def test_get_output_dir_default_creates_dir():
     output_dir = get_output_dir()
     assert output_dir.exists()
     assert output_dir.is_dir()
-    # Should end with image2-output relative to temp dir
-    assert output_dir.name == "image2-output"
+    # Falls back to CWD/output when no env vars are set
+    assert output_dir.name == "output"
 
 
 def test_get_output_dir_custom():

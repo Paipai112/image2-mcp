@@ -15,7 +15,7 @@ RESET="\033[0m"
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="$HOME/.claude/.env"
-MCP_FILE="$HOME/.claude/.mcp.json"
+CLAUDE_JSON="$HOME/.claude.json"
 
 echo ""
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
@@ -23,42 +23,46 @@ echo -e "${BOLD}  Image2 MCP — One-Click Setup${RESET}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
 
-	# ── 1. Install / check uv ─────────────────
-	echo -e "${BOLD}[1/5]${RESET} Ensuring uv is installed..."
+# ── 1. Install / check uv ─────────────────
+echo -e "${BOLD}[1/5]${RESET} Ensuring uv is installed..."
 
-	if command -v uv &>/dev/null; then
-	    echo -e "  ${GREEN}✓${RESET} uv $(uv --version)"
-	else
-	    echo -e "  ${YELLOW}!${RESET} uv not found — installing now..."
-	    case "$(uname -s)" in
-	        Darwin)
-	            echo -e "  Installing uv on macOS..."
-	            curl -LsSf https://astral.sh/uv/install.sh | sh
-	            ;;
-	        MINGW*|MSYS*|CYGWIN*)
-	            echo -e "  Installing uv on Windows..."
-	            powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-	            ;;
-	        Linux)
-	            echo -e "  Installing uv on Linux..."
-	            curl -LsSf https://astral.sh/uv/install.sh | sh
-	            ;;
-	        *)
-	            echo -e "  ${RED}✗${RESET} Unknown OS — please install uv manually:"
-	            echo "    https://docs.astral.sh/uv/getting-started/installation/"
-	            echo ""
-	            exit 1
-	            ;;
-	    esac
+UV_PATH=""
 
-	    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-	    if command -v uv &>/dev/null; then
-	        echo -e "  ${GREEN}✓${RESET} uv installed successfully ($(uv --version))"
-	    else
-	        echo -e "  ${RED}✗${RESET} uv installation may have failed — restart your shell and re-run."
-	        exit 1
-	    fi
-	fi
+if command -v uv &>/dev/null; then
+    UV_PATH="$(command -v uv)"
+    echo -e "  ${GREEN}✓${RESET} uv $(uv --version) (at $UV_PATH)"
+else
+    echo -e "  ${YELLOW}!${RESET} uv not found — installing now..."
+    case "$(uname -s)" in
+        Darwin)
+            echo -e "  Installing uv on macOS..."
+            curl -LsSf https://astral.sh/uv/install.sh | sh
+            ;;
+        MINGW*|MSYS*|CYGWIN*)
+            echo -e "  Installing uv on Windows..."
+            powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+            ;;
+        Linux)
+            echo -e "  Installing uv on Linux..."
+            curl -LsSf https://astral.sh/uv/install.sh | sh
+            ;;
+        *)
+            echo -e "  ${RED}✗${RESET} Unknown OS — please install uv manually:"
+            echo "    https://docs.astral.sh/uv/getting-started/installation/"
+            echo ""
+            exit 1
+            ;;
+    esac
+
+    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+    if command -v uv &>/dev/null; then
+        UV_PATH="$(command -v uv)"
+        echo -e "  ${GREEN}✓${RESET} uv installed successfully ($(uv --version))"
+    else
+        echo -e "  ${RED}✗${RESET} uv installation may have failed — restart your shell and re-run."
+        exit 1
+    fi
+fi
 
 # ── 2. Install dependencies ────────────────
 echo -e "${BOLD}[2/5]${RESET} Installing Python dependencies..."
@@ -99,76 +103,104 @@ echo -e "${BOLD}[4/5]${RESET} Writing environment config..."
 
 mkdir -p "$HOME/.claude"
 
-if [ -f "$ENV_FILE" ]; then
-    # Only update MAGENE_API_KEY line if it exists; otherwise append
-    if grep -q "^MAGENE_API_KEY=" "$ENV_FILE" 2>/dev/null; then
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s|^MAGENE_API_KEY=.*|MAGENE_API_KEY=$MAGENE_API_KEY|" "$ENV_FILE"
-        else
-            sed -i "s|^MAGENE_API_KEY=.*|MAGENE_API_KEY=$MAGENE_API_KEY|" "$ENV_FILE"
-        fi
-        echo -e "  ${GREEN}✓${RESET} Updated MAGENE_API_KEY in $ENV_FILE"
-    else
-        echo "MAGENE_API_KEY=$MAGENE_API_KEY" >> "$ENV_FILE"
-        echo -e "  ${GREEN}✓${RESET} Added MAGENE_API_KEY to $ENV_FILE"
-    fi
-else
-    echo "MAGENE_API_KEY=$MAGENE_API_KEY" > "$ENV_FILE"
-    echo -e "  ${GREEN}✓${RESET} Created $ENV_FILE"
-fi
+# Use Python to safely write .env.
+# Pass sensitive values via environment to avoid shell injection into Python source.
+SETUP_API_KEY="$MAGENE_API_KEY" \
+SETUP_ENV_FILE="$ENV_FILE" \
+uv run python -c "
+import os
+import sys
 
-# Add default output dir if not present
-if ! grep -q "^IMAGE2_OUTPUT_DIR=" "$ENV_FILE" 2>/dev/null; then
-    echo "IMAGE2_OUTPUT_DIR=$HOME/.claude/Pictures" >> "$ENV_FILE"
-    echo -e "  ${GREEN}✓${RESET} Default IMAGE2_OUTPUT_DIR=$HOME/.claude/Pictures"
-fi
+env_file = os.environ['SETUP_ENV_FILE']
+api_key = os.environ['SETUP_API_KEY']
+base_url = 'http://tops.magene.cn:11636/api/v1/images/generations'
+
+# Read existing entries (if file exists)
+entries = {}
+if os.path.exists(env_file):
+    with open(env_file) as f:
+        for line in f:
+            line = line.rstrip('\n').rstrip('\r')
+            if '=' in line and not line.startswith('#'):
+                key, _, val = line.partition('=')
+                entries[key.strip()] = val.strip()
+
+# Update/add required keys
+entries['MAGENE_API_KEY'] = api_key
+entries['MAGENE_API_BASE_URL'] = base_url
+
+# Write back (always ends with newline)
+with open(env_file, 'w') as f:
+    f.write('# Image2 MCP — Environment Configuration\n')
+    f.write('# Auto-generated by setup.sh — do not edit manually\n')
+    f.write('\n')
+    for k, v in sorted(entries.items()):
+        f.write(f'{k}={v}\n')
+
+# Mask API key in output: show only prefix
+masked = api_key[:4] + '****' + api_key[-4:] if len(api_key) > 8 else '****'
+print(f'Wrote {env_file}')
+print(f'MAGENE_API_KEY={masked}')
+print(f'MAGENE_API_BASE_URL={base_url}')
+" 2>&1 | while IFS= read -r line; do echo -e "  ${GREEN}✓ ${line}${RESET}"; done
 
 # ── 5. Configure MCP server ────────────────
 echo ""
 echo -e "${BOLD}[5/5]${RESET} Configuring Claude Code MCP server..."
 
-MCP_ENTRY=$(cat <<EOF
-{
-      "command": "bash",
-      "args": ["-c", "set -a; [ -f ~/.claude/.env ] && . ~/.claude/.env; [ -f .env ] && . ./.env; export IMAGE2_PROJECT_DIR=\$(pwd); set +a; uv run --directory ${PROJECT_DIR} python -m image2_mcp"],
-      "description": "文生图 — 调用公司统一 API 平台 image2 模型生成图片"
-    }
-EOF
-)
-
+# Write MCP config to ~/.claude.json (NOT ~/.claude/.mcp.json — fixes 问题 3)
+# Uses bash -c wrapper that sources ~/.claude/.env so API key is not duplicated in claude.json
+SETUP_UV_PATH="$UV_PATH" \
+SETUP_PROJECT_DIR="$PROJECT_DIR" \
+SETUP_CLAUDE_JSON="$CLAUDE_JSON" \
 uv run python -c "
-import json, sys, os
+import json, os, sys
 
-mcp_file = os.path.expanduser('$MCP_FILE')
-entry = json.loads(r'''$MCP_ENTRY''')
+claude_json = os.environ['SETUP_CLAUDE_JSON']
+project_dir = os.environ['SETUP_PROJECT_DIR']
+uv_path = os.environ['SETUP_UV_PATH']
 
-if os.path.exists(mcp_file):
-    with open(mcp_file) as f:
+entry = {
+    'command': 'bash',
+    'args': [
+        '-c',
+        'set -a; [ -f ~/.claude/.env ] && . ~/.claude/.env; [ -f .env ] && . ./.env; set +a; exec ' + uv_path + ' run --directory ' + project_dir + ' python -m image2_mcp'
+    ],
+    'env': {
+        'PATH': os.path.expanduser('~/.local/bin') + ':/usr/local/bin:/usr/bin:/bin',
+        'HOME': os.path.expanduser('~')
+    },
+    'description': '文生图 — 调用公司统一 API 平台 image2 模型生成图片',
+    'type': 'stdio'
+}
+
+# Read ~/.claude.json
+if os.path.exists(claude_json):
+    with open(claude_json) as f:
         data = json.load(f)
 else:
     data = {}
 
+# Ensure mcpServers key exists at top level
 if 'mcpServers' not in data:
     data['mcpServers'] = {}
 
 if 'image2' in data['mcpServers']:
-    print('  ! image2 entry already exists in $MCP_FILE')
-    sys.exit(0)
+    print('! image2 entry already exists in ~/.claude.json, replacing...')
+else:
+    print('Adding image2 to ~/.claude.json...')
 
 data['mcpServers']['image2'] = entry
 
-with open(mcp_file, 'w') as f:
+with open(claude_json, 'w') as f:
     json.dump(data, f, indent=2, ensure_ascii=False)
     f.write('\n')
 
-print('  ✓ Added image2 to $MCP_FILE')
-"
-
-if [ $? -eq 0 ]; then
-    echo -e "  ${GREEN}✓${RESET} MCP configuration updated"
-else
-    echo -e "  ${YELLOW}!${RESET} MCP configuration may already exist or failed to update"
-fi
+print('image2 MCP server configured in ~/.claude.json')
+print('Command: {}'.format(uv_path))
+print('Project: {}'.format(project_dir))
+print('API key is loaded from ~/.claude/.env at runtime (not stored here)')
+" 2>&1 | while IFS= read -r line; do echo -e "  ${GREEN}✓ ${line}${RESET}"; done
 
 # ── Health Check ───────────────────────────
 echo ""

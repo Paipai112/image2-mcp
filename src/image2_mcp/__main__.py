@@ -25,7 +25,8 @@ def _check_env() -> bool:
     """Check required environment variables."""
     api_key = os.environ.get("MAGENE_API_KEY", "").strip()
     if api_key:
-        print(_green(f"MAGENE_API_KEY is set ({api_key[:8]}...)"))
+        masked = api_key[:4] + "****" + api_key[-4:] if len(api_key) > 8 else "****"
+        print(_green(f"MAGENE_API_KEY is set ({masked})"))
         return True
     else:
         print(_red("MAGENE_API_KEY is not set"))
@@ -101,7 +102,7 @@ async def health_check() -> int:
     api_key = os.environ.get("MAGENE_API_KEY", "").strip()
     base_url = os.environ.get(
         "MAGENE_API_BASE_URL",
-        "http://localhost:11636/api/v1/images/generations",
+        "http://tops.magene.cn:11636/api/v1/images/generations",
     ).rstrip("/")
 
     if api_key:

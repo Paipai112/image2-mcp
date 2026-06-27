@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .errors import AuthError
 
-_DEFAULT_BASE_URL = "http://localhost:11636/api/v1/images/generations"
+_DEFAULT_BASE_URL = "http://tops.magene.cn:11636/api/v1/images/generations"
 _DEFAULT_MODEL = "openai/gpt-image-2"
 
 
@@ -34,8 +34,10 @@ def get_output_dir(path: str | None = None) -> Path:
     Precedence:
     1. Explicit path argument (from user/AI request)
     2. IMAGE2_OUTPUT_DIR env var
-    3. IMAGE2_PROJECT_DIR env var → <project>/output/ (auto-set by MCP launcher)
-    4. System temp dir / image2-output
+    3. CLAUDE_PROJECT_DIR env var → <project>/output/  (auto-set by Claude Code)
+    4. IMAGE2_PROJECT_DIR env var → <project>/output/  (legacy)
+    5. CWD / output  (fallback when running outside Claude Code)
+    6. System temp dir / image2-output
     """
     if path:
         output_dir = Path(path)
@@ -44,11 +46,16 @@ def get_output_dir(path: str | None = None) -> Path:
         if env_path:
             output_dir = Path(env_path)
         else:
-            project_dir = os.environ.get("IMAGE2_PROJECT_DIR")
+            project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
             if project_dir:
                 output_dir = Path(project_dir) / "output"
             else:
-                output_dir = Path(tempfile.gettempdir()) / "image2-output"
+                project_dir = os.environ.get("IMAGE2_PROJECT_DIR")
+                if project_dir:
+                    output_dir = Path(project_dir) / "output"
+                else:
+                    # Last resort: use CWD
+                    output_dir = Path(os.getcwd()) / "output"
 
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
